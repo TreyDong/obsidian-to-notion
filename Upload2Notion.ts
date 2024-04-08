@@ -23,6 +23,8 @@ export class Upload2Notion {
 			},
 			body: ''
 		})
+		console.log('deletePAGE')
+		console.log(response)
 		return response;
 	}
 
@@ -32,6 +34,31 @@ export class Upload2Notion {
 		await this.deletePage(notionID)
 		const res = await this.createPage(title, allowTags, tags, childArr)
 		return res
+	}
+
+	async appendPage(pageId:string, childArr: any){
+		const bodyString:any = {
+			children: childArr,
+		}
+		if (pageId === undefined){
+			return
+		}
+		try {
+			const response = await requestUrl({
+				url: `https://api.notion.com/v1/blocks/${pageId}/children`,
+				method: 'PATCH',
+				headers: {
+					'Content-Type': 'application/json',
+					// 'User-Agent': 'obsidian.md',
+					'Authorization': 'Bearer ' + this.app.settings.notionAPI,
+					'Notion-Version': '2021-08-16',
+				},
+				body: JSON.stringify(bodyString),
+			})
+			return response;
+		} catch (error) {
+			new Notice(`network error ${error}`)
+		}
 	}
 
 	async createPage(title:string, allowTags:boolean, tags:string[], childArr: any) {
@@ -85,37 +112,33 @@ export class Upload2Notion {
 		}
 	}
 
-	async syncMarkdownToNotion(title:string, allowTags:boolean, tags:string[], markdown: string, nowFile: TFile, app:App, settings:any): Promise<any> {
+	async syncMarkdownToNotion(title:string, allowTags:boolean, tags:string[], markdown: string,pageId:string): Promise<any> {
 		let res:any
 		const yamlObj:any = yamlFrontMatter.loadFront(markdown);
 		const __content = yamlObj.__content
 		const file2Block = markdownToBlocks(__content);
-		const frontmasster =await app.metadataCache.getFileCache(nowFile)?.frontmatter
-		const notionID = frontmasster ? frontmasster.notionID : null
-
-		if(notionID){
-				res = await this.updatePage(notionID, title, allowTags, tags, file2Block);
-		} else {
-			 	res = await this.createPage(title, allowTags, tags, file2Block);
-		}
-		if (res.status === 200) {
-			await this.updateYamlInfo(markdown, nowFile, res, app, settings)
-		} else {
-			new Notice(`${res.text}`)
+		// 如果是第一块chunk,就直接新增
+		if( pageId){
+			res = await this.appendPage(pageId,file2Block)
+		}else{
+			res = await this.createPage(title, allowTags, tags, file2Block);
 		}
 		return res
+
 	}
 
 	async updateYamlInfo(yamlContent: string, nowFile: TFile, res: any,app:App, settings:any) {
 		const yamlObj:any = yamlFrontMatter.loadFront(yamlContent);
-		let {url, id} = res.json
+		let {url, id} = res
 		// replace www to notionID
-		const {notionID} = settings;
+		const {notionID,allowNotionLink} = settings;
 		if(notionID!=="") {
 			// replace url str "www" to notionID
 			url  = url.replace("www.notion.so", `${notionID}.notion.site`)
 		}
-		yamlObj.link = url;
+		if (allowNotionLink){
+			yamlObj.NotionLink = url;
+		}
 		try {
 			await navigator.clipboard.writeText(url)
 		} catch (error) {
@@ -135,5 +158,31 @@ export class Upload2Notion {
 		} catch (error) {
 			new Notice(`write file error ${error}`)
 		}
+	}
+
+	 splitLongString(str: string) {
+		if (str.length <= 4000) {
+			return [str];
+		}
+
+		const chunks = [];
+		let startIndex = 0;
+		let endIndex = 4000;
+
+		while (endIndex < str.length) {
+			if (str[endIndex] !== '\n') {
+				while (endIndex > startIndex && str[endIndex] !== '\n') {
+					endIndex--;
+				}
+			}
+
+			chunks.push(str.substring(startIndex, endIndex));
+			startIndex = endIndex + 1;
+			endIndex = startIndex + 4000;
+		}
+
+		chunks.push(str.substring(startIndex));
+
+		return chunks;
 	}
 }
