@@ -23,8 +23,6 @@ export class Upload2Notion {
 			},
 			body: ''
 		})
-		console.log('deletePAGE')
-		console.log(response)
 		return response;
 	}
 
@@ -34,31 +32,6 @@ export class Upload2Notion {
 		await this.deletePage(notionID)
 		const res = await this.createPage(title, allowTags, tags, childArr)
 		return res
-	}
-
-	async appendPage(pageId:string, childArr: any){
-		const bodyString:any = {
-			children: childArr,
-		}
-		if (pageId === undefined){
-			return
-		}
-		try {
-			const response = await requestUrl({
-				url: `https://api.notion.com/v1/blocks/${pageId}/children`,
-				method: 'PATCH',
-				headers: {
-					'Content-Type': 'application/json',
-					// 'User-Agent': 'obsidian.md',
-					'Authorization': 'Bearer ' + this.app.settings.notionAPI,
-					'Notion-Version': '2021-08-16',
-				},
-				body: JSON.stringify(bodyString),
-			})
-			return response;
-		} catch (error) {
-			new Notice(`network error ${error}`)
-		}
 	}
 
 	async createPage(title:string, allowTags:boolean, tags:string[], childArr: any) {
@@ -129,16 +102,14 @@ export class Upload2Notion {
 
 	async updateYamlInfo(yamlContent: string, nowFile: TFile, res: any,app:App, settings:any) {
 		const yamlObj:any = yamlFrontMatter.loadFront(yamlContent);
-		let {url, id} = res
+		let {url, id} = res.json
 		// replace www to notionID
-		const {notionID,allowNotionLink} = settings;
+		const {notionID} = settings;
 		if(notionID!=="") {
 			// replace url str "www" to notionID
 			url  = url.replace("www.notion.so", `${notionID}.notion.site`)
 		}
-		if (allowNotionLink){
-			yamlObj.NotionLink = url;
-		}
+		yamlObj.link = url;
 		try {
 			await navigator.clipboard.writeText(url)
 		} catch (error) {
@@ -185,4 +156,30 @@ export class Upload2Notion {
 
 		return chunks;
 	}
+
+	async appendPage(pageId:string, childArr: any){
+		const bodyString:any = {
+			children: childArr,
+		}
+		if (pageId === undefined){
+			return
+		}
+		try {
+			const response = await requestUrl({
+				url: `https://api.notion.com/v1/blocks/${pageId}/children`,
+				method: 'PATCH',
+				headers: {
+					'Content-Type': 'application/json',
+					// 'User-Agent': 'obsidian.md',
+					'Authorization': 'Bearer ' + this.app.settings.notionAPI,
+					'Notion-Version': '2021-08-16',
+				},
+				body: JSON.stringify(bodyString),
+			})
+			return response;
+		} catch (error) {
+			new Notice(`network error ${error}`)
+		}
+	}
+
 }
