@@ -13,6 +13,7 @@ export class Upload2Notion {
 	}
 
 	async deletePage(notionID:string){
+		if (notionID){
 		const response = await requestUrl({
 			url: `https://api.notion.com/v1/blocks/${notionID}`,
 			method: 'DELETE',
@@ -23,18 +24,13 @@ export class Upload2Notion {
 			},
 			body: ''
 		})
-		console.log('deletePAGE')
-		console.log(response)
 		return response;
+		}
 	}
 
 	// 因为需要解析notion的block进行对比，非常的麻烦，
 	// 暂时就直接删除，新建一个page
-	async updatePage(notionID:string, title:string, allowTags:boolean, tags:string[], childArr:any) {
-		await this.deletePage(notionID)
-		const res = await this.createPage(title, allowTags, tags, childArr)
-		return res
-	}
+
 
 	async appendPage(pageId:string, childArr: any){
 		const bodyString:any = {
@@ -77,7 +73,7 @@ export class Upload2Notion {
 					],
 				},
 				Tags: {
-					multi_select: allowTags && tags !== undefined ? tags.map(tag => {
+					multi_select: allowTags && tags !== undefined && tags!= null ? tags.map(tag => {
 						return {"name": tag}
 					}) : [],
 				},
@@ -129,7 +125,7 @@ export class Upload2Notion {
 
 	async updateYamlInfo(yamlContent: string, nowFile: TFile, res: any,app:App, settings:any) {
 		const yamlObj:any = yamlFrontMatter.loadFront(yamlContent);
-		let {url, id} = res
+		let {url, id} = res.json
 		// replace www to notionID
 		const {notionID,allowNotionLink} = settings;
 		if(notionID!=="") {
@@ -145,6 +141,11 @@ export class Upload2Notion {
 			new Notice(`复制链接失败，请手动复制${error}`)
 		}
 		yamlObj.notionID = id;
+		await this.updateYaml(yamlObj, nowFile)
+	}
+
+
+	async updateYaml(yamlObj:any, nowFile: TFile) {
 		const __content = yamlObj.__content;
 		delete yamlObj.__content
 		const yamlhead = yaml.stringify(yamlObj)
@@ -159,6 +160,9 @@ export class Upload2Notion {
 			new Notice(`write file error ${error}`)
 		}
 	}
+
+
+
 
 	 splitLongString(str: string) {
 		if (str.length <= 4000) {
@@ -185,4 +189,14 @@ export class Upload2Notion {
 
 		return chunks;
 	}
+
+
+	generateUUID(): string {
+		return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+			const r = (Math.random() * 16) | 0,
+				v = c === 'x' ? r : (r & 0x3) | 0x8;
+			return v.toString(16);
+		});
+	}
+
 }

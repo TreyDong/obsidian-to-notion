@@ -7,12 +7,14 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
-	normalizePath
+	normalizePath, TAbstractFile, EventRef, CachedMetadata, TFile,moment
 } from "obsidian";
 import {addIcons} from 'icon';
 import {Upload2Notion} from "Upload2Notion";
 import {NoticeMConfig} from "Message";
 import {CLIENT_RENEG_LIMIT} from "tls";
+
+import * as yamlFrontMatter from "yaml-front-matter";
 
 
 // Remember to rename these classes and interfaces!
@@ -26,6 +28,7 @@ interface PluginSettings {
 	allowTags: boolean;
 	allowNotionLink: boolean;
 	folderPath: string;
+	timer:string
 }
 
 const langConfig = NoticeMConfig(window.localStorage.getItem('language') || 'en')
@@ -39,10 +42,31 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	allowTags: false,
 	allowNotionLink: false,
 	folderPath: "",
+	timer:""
 };
+
+interface FileObj {
+	fileName: string;
+	file: TFile;
+	trigger: string;
+	notionId: string
+}
 
 export default class ObsidianSyncNotionPlugin extends Plugin {
 	settings: PluginSettings;
+	
+	count: number;
+
+	
+	needUpdateFileMap: Map<string, FileObj>;
+	
+	refArr:Array<EventRef>
+
+	// registerEvent(eventRef: EventRef): void{
+	//
+	// }
+
+
 
 	async onload() {
 		await this.loadSettings();
@@ -53,7 +77,7 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			"Share to notion",
 			async (evt: MouseEvent) => {
 				// Called when the user clicks the icon.
-				this.upload();
+				this.upload(null);
 			}
 		);
 
@@ -65,20 +89,141 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			id: "share-to-notion",
 			name: "share to notion",
 			editorCallback: async (editor: Editor, view: MarkdownView) => {
-				this.upload()
+				this.upload(null)
 			},
 		});
 
-
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.count = 0
+		this.needUpdateFileMap = new Map()
+		// const triggerArr =['modify','delete','rename','create']
+		this.refArr = []
+		const folder = this.settings.folderPath
+		const notion = new Upload2Notion(this)
+		this.refArr.push( this.app.vault.on('modify',async (file: TFile) => {
+			// this.autoUpload(file,triggerArr[i])
+			if (file.parent.path === folder) {
+				let id = app.metadataCache.getFileCache(file).frontmatter.id
+				if (!id) {
+					id = notion.generateUUID()
+					const yamlObj: any = yamlFrontMatter.loadFront(await app.vault.read(file));
+					yamlObj.id = id
+					await notion.updateYaml(yamlObj, file)
+				}
+				const notionID = app.metadataCache.getFileCache(file).frontmatter.notionID
+				if (notionID) {
+					id = notionID
+				}
+				const fileObj: FileObj = {
+					fileName: file.name,
+					file: file,
+					trigger: "modify",
+					notionId: id
+				}
+				this.needUpdateFileMap.set(id, fileObj)
 
+			}
+		}))
+		this.refArr.push( this.app.metadataCache.on('deleted',(file: TFile)=>{
+			// this.autoUpload(file,triggerArr[i])
+			console.log(file)
+			if (file.parent.path === folder){
+				const notionID = app.metadataCache.getFileCache(file).frontmatter.notionID
+
+				if(notionID){
+					const fileObj :FileObj = {
+						fileName: file.name,
+						file: file,
+						trigger: "delete",
+						notionId:notionID
+					}
+					this.needUpdateFileMap.set(notionID,fileObj)
+				}
+
+			}
+		}))
+		this.refArr.push( this.app.vault.on('rename',async (file: TFile) => {
+			// this.autoUpload(file,triggerArr[i])
+			if (file.parent.path === folder) {
+				let id = app.metadataCache.getFileCache(file).frontmatter.id
+				if (!id) {
+					const id = notion.generateUUID()
+					const yamlObj: any = yamlFrontMatter.loadFront(await app.vault.read(file));
+					yamlObj.id = id
+					await notion.updateYaml(yamlObj, file)
+				}
+				const notionID = app.metadataCache.getFileCache(file).frontmatter.notionID
+				if (notionID) {
+					id = notionID
+				}
+				const fileObj: FileObj = {
+					fileName: file.name,
+					file: file,
+					trigger: "rename",
+					notionId: id
+				}
+				this.needUpdateFileMap.set(id, fileObj)
+
+			}
+		}))
+		this.refArr.push( this.app.vault.on('create',async (file: TFile) => {
+			if (file.parent.path === folder) {
+				const id = notion.generateUUID()
+				const yamlObj: any = yamlFrontMatter.loadFront(await app.vault.read(file));
+				yamlObj.id = id
+				await notion.updateYaml(yamlObj, file)
+				// const frontmatter = app.metadataCache.getFileCache(file).frontmatter
+				// let notionID = 'create'+this.count
+				// if (frontmatter){
+				// 	if( frontmatter.notionID){
+				// 		notionID = frontmatter.notionID
+				// 	}
+				// }
+				const fileObj: FileObj = {
+					fileName: file.name,
+					file: file,
+					trigger: "create",
+					notionId: id
+				}
+				this.needUpdateFileMap.set(id, fileObj)
+				this.count++
+			}
+		}))
+		for (let refArrKey in this.refArr) {
+			this.registerEvent(refArrKey)
+		}
+
+
+		const timer = Number(this.settings.timer)
+		this.registerInterval(	window.setInterval(() =>{
+			this.autoUpload(this.needUpdateFileMap)
+			this.needUpdateFileMap.clear()
+		},1000*timer))
 	}
 
-	onunload() {
+	autoUpload(fileMap:Map<string, FileObj>){
+
+		fileMap.forEach((value, key, map) =>{
+			let trigger = value.trigger
+			let file = value.file
+			if(trigger){
+				if(trigger === 'delete'){
+					const notion =new  Upload2Notion(this);
+					notion.deletePage(key).then(r => {
+						new Notice('delete Notion success')
+					})
+				}else{
+						this.upload(file).then(()=>{
+							new Notice('sync Notion success')
+						})
+				}
+		}
+		})
+		return
 	}
 
-	async upload() {
+	async upload(file: TFile) {
 		const {notionAPI, databaseID, allowTags} = this.settings;
 		if (notionAPI === "" || databaseID === "") {
 			new Notice(
@@ -87,14 +232,17 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			return;
 		}
 		const upload = new Upload2Notion(this);
-		const {markDownData, chunks, nowFile, tags} = await this.getNowFileMarkdownContent(this.app);
+		const {markDownData, nowFile, tags} = await this.getNowFileMarkdownContent(this.app,file);
+
 		const frontmasster = app.metadataCache.getFileCache(nowFile)?.frontmatter
 		const notionID = frontmasster ? frontmasster.notionID : null
+		let chunks = upload.splitLongString(markDownData)
 		// 存在就先删除
-		if (notionID) {
-			await upload.deletePage(notionID)
-		}
+
 		try {
+			if (notionID) {
+					await upload.deletePage(notionID)
+			}
 			if (chunks) {
 				const {basename} = nowFile;
 				// create page
@@ -115,12 +263,13 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 				new Notice('sync-fail,please check your file in obsidian')
 			}
 		} catch (Exception) {
+			console.log(Exception)
 			new Notice('sync-fail,please retry')
 		}
 	}
 
-	async getNowFileMarkdownContent(app: App) {
-		const nowFile = app.workspace.getActiveFile();
+	async getNowFileMarkdownContent(app: App,file: TFile) {
+		const nowFile = file === null ? app.workspace.getActiveFile():file;
 		const {allowTags} = this.settings;
 		let tags = []
 		try {
@@ -134,10 +283,8 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 		if (nowFile) {
 			let markDownData = await nowFile.vault.read(nowFile);
 			const upload = new Upload2Notion(this);
-			let chunks = upload.splitLongString(markDownData)
 			return {
 				markDownData,
-				chunks,
 				nowFile,
 				tags
 			};
@@ -277,6 +424,20 @@ class SampleSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}))
 
+		new Setting(containerEl)
+			.setName("Auto sync Time")
+			.setDesc("how much minutes sync")
+			.addText((cb) => {
+				cb.setValue(this.plugin.settings.timer)
+					.onChange(async (value) => {
+						this.plugin.settings.timer = value;
+						await this.plugin.saveSettings();
+					})
+			})
+
+
+
 
 	}
+
 }
