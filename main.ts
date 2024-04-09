@@ -77,7 +77,7 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			"Share to notion",
 			async (evt: MouseEvent) => {
 				// Called when the user clicks the icon.
-				this.upload(null);
+				await this.upload(null);
 			}
 		);
 
@@ -89,7 +89,7 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			id: "share-to-notion",
 			name: "share to notion",
 			editorCallback: async (editor: Editor, view: MarkdownView) => {
-				this.upload(null)
+				await this.upload(null)
 			},
 		});
 
@@ -97,40 +97,42 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 		this.addSettingTab(new SampleSettingTab(this.app, this));
 		this.count = 0
 		this.needUpdateFileMap = new Map()
-		// const triggerArr =['modify','delete','rename','create']
 		this.refArr = []
 		const folder = this.settings.folderPath
 		const notion = new Upload2Notion(this)
-		this.refArr.push( this.app.vault.on('modify',async (file: TFile) => {
-			// this.autoUpload(file,triggerArr[i])
+		this.refArr.push( this.app.metadataCache.on('changed',async (file: TFile, data:string,cache: CachedMetadata) => {
 			if (file.parent.path === folder) {
-				let id = app.metadataCache.getFileCache(file).frontmatter.id
-				if (!id) {
-					id = notion.generateUUID()
-					const yamlObj: any = yamlFrontMatter.loadFront(await app.vault.read(file));
-					yamlObj.id = id
-					await notion.updateYaml(yamlObj, file)
+				let frontmatter = cache.frontmatter
+				console.log(cache)
+				if (frontmatter){
+					let notionID = frontmatter.notionID
+					const yamlObj: any = yamlFrontMatter.loadFront(data);
+
+					if (notionID === undefined || notionID === null){
+						notionID = notion.generateUUID()
+						yamlObj.notionID = notionID
+						await notion.updateYaml(yamlObj, file)
+					}else{
+						if (yamlObj.notionID === notionID){
+
+						}
+					}
+					console.log(notionID)
+					const fileObj: FileObj = {
+						fileName: file.name,
+						file: file,
+						trigger: "modify",
+						notionId: notionID
+					}
+					this.needUpdateFileMap.set(notionID, fileObj)
 				}
-				const notionID = app.metadataCache.getFileCache(file).frontmatter.notionID
-				if (notionID) {
-					id = notionID
-				}
-				const fileObj: FileObj = {
-					fileName: file.name,
-					file: file,
-					trigger: "modify",
-					notionId: id
-				}
-				this.needUpdateFileMap.set(id, fileObj)
+
 
 			}
 		}))
-		this.refArr.push( this.app.metadataCache.on('deleted',(file: TFile)=>{
-			// this.autoUpload(file,triggerArr[i])
-			console.log(file)
-			if (file.parent.path === folder){
-				const notionID = app.metadataCache.getFileCache(file).frontmatter.notionID
-
+		this.refArr.push( this.app.metadataCache.on('deleted',(file: TFile,prevCache: CachedMetadata | null)=>{
+			if (file.path.indexOf(folder)){
+				const notionID = prevCache.frontmatter.notionID
 				if(notionID){
 					const fileObj :FileObj = {
 						fileName: file.name,
@@ -140,54 +142,6 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 					}
 					this.needUpdateFileMap.set(notionID,fileObj)
 				}
-
-			}
-		}))
-		this.refArr.push( this.app.vault.on('rename',async (file: TFile) => {
-			// this.autoUpload(file,triggerArr[i])
-			if (file.parent.path === folder) {
-				let id = app.metadataCache.getFileCache(file).frontmatter.id
-				if (!id) {
-					const id = notion.generateUUID()
-					const yamlObj: any = yamlFrontMatter.loadFront(await app.vault.read(file));
-					yamlObj.id = id
-					await notion.updateYaml(yamlObj, file)
-				}
-				const notionID = app.metadataCache.getFileCache(file).frontmatter.notionID
-				if (notionID) {
-					id = notionID
-				}
-				const fileObj: FileObj = {
-					fileName: file.name,
-					file: file,
-					trigger: "rename",
-					notionId: id
-				}
-				this.needUpdateFileMap.set(id, fileObj)
-
-			}
-		}))
-		this.refArr.push( this.app.vault.on('create',async (file: TFile) => {
-			if (file.parent.path === folder) {
-				const id = notion.generateUUID()
-				const yamlObj: any = yamlFrontMatter.loadFront(await app.vault.read(file));
-				yamlObj.id = id
-				await notion.updateYaml(yamlObj, file)
-				// const frontmatter = app.metadataCache.getFileCache(file).frontmatter
-				// let notionID = 'create'+this.count
-				// if (frontmatter){
-				// 	if( frontmatter.notionID){
-				// 		notionID = frontmatter.notionID
-				// 	}
-				// }
-				const fileObj: FileObj = {
-					fileName: file.name,
-					file: file,
-					trigger: "create",
-					notionId: id
-				}
-				this.needUpdateFileMap.set(id, fileObj)
-				this.count++
 			}
 		}))
 		for (let refArrKey in this.refArr) {
@@ -195,16 +149,20 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 		}
 
 
-		const timer = Number(this.settings.timer)
+		let timer = Number(this.settings.timer)
+		if (timer === undefined || timer == null) {
+			timer = 60
+		}
 		this.registerInterval(	window.setInterval(() =>{
-			this.autoUpload(this.needUpdateFileMap)
+			console.log(this.needUpdateFileMap.size)
+			this.autoUpload()
 			this.needUpdateFileMap.clear()
+			console.log(this.needUpdateFileMap.size)
 		},1000*timer))
 	}
 
-	autoUpload(fileMap:Map<string, FileObj>){
-
-		fileMap.forEach((value, key, map) =>{
+	autoUpload(){
+		this.needUpdateFileMap.forEach((value, key, map) =>{
 			let trigger = value.trigger
 			let file = value.file
 			if(trigger){
@@ -213,6 +171,7 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 					notion.deletePage(key).then(r => {
 						new Notice('delete Notion success')
 					})
+
 				}else{
 						this.upload(file).then(()=>{
 							new Notice('sync Notion success')
@@ -220,7 +179,8 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 				}
 		}
 		})
-		return
+		this.needUpdateFileMap.clear()
+
 	}
 
 	async upload(file: TFile) {
@@ -241,7 +201,10 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 
 		try {
 			if (notionID) {
-					await upload.deletePage(notionID)
+					await upload.deletePage(notionID).then(() =>{
+					}).catch((error) => {
+						console.log('delete  fail',error)
+					})
 			}
 			if (chunks) {
 				const {basename} = nowFile;
