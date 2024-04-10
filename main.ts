@@ -2,19 +2,15 @@ import {
 	App,
 	Editor,
 	MarkdownView,
-	Modal,
 	Notice,
 	Plugin,
 	PluginSettingTab,
 	Setting,
-	normalizePath, TAbstractFile, EventRef, CachedMetadata, TFile, moment, Vault, TFolder
+	 CachedMetadata, TFile, moment, Vault, TFolder
 } from "obsidian";
 import {addIcons} from 'icon';
 import {Upload2Notion} from "Upload2Notion";
 import {NoticeMConfig} from "Message";
-import {CLIENT_RENEG_LIMIT} from "tls";
-
-import * as yamlFrontMatter from "yaml-front-matter";
 
 
 // Remember to rename these classes and interfaces!
@@ -57,17 +53,8 @@ interface FileObj {
 
 export default class ObsidianSyncNotionPlugin extends Plugin {
 	settings: PluginSettings;
-	
-	count: number;
 
-	
 	needUpdateFileMap: Map<string, FileObj>;
-	
-	refArr:Array<EventRef>
-
-	// registerEvent(eventRef: EventRef): void{
-	//
-	// }
 
 
 
@@ -105,8 +92,9 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 				const notionID = prevCache.frontmatter.notionID
 				if(notionID){
 					notion.deletePage(notionID).then(r => {
-						new Notice('delete Notion page success')
+						new Notice('Delete Notion page success')
 					}).catch((error) => {
+						new Notice('Delete Notion Page fail,page not exist')
 					})
 				}
 			}
@@ -118,7 +106,6 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			timerSetting = 60
 		}
 		this.registerInterval(	window.setInterval(() =>{
-			console.log('开始执行',1000*60*timerSetting)
 			this.syncFolder()
 			this.needUpdateFileMap.clear()
 		},1000*60*timerSetting))
@@ -141,10 +128,8 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 						const mtime = file.stat.mtime
 						const modifiedDate = moment(mtime)
 						let later = this.settings.later
-						// console.log(modifiedDate,lastSyncTimeMoment)
 						if (modifiedDate.subtract(later,"minutes").isAfter(lastSyncTimeMoment ) ||
-							currentDate.subtract(60,"minutes").isAfter(lastSyncTimeMoment )){
-							// console.log('时间到了 \n',modifiedDate,lastSyncTimeMoment)
+							currentDate.subtract(180,"minutes").isAfter(lastSyncTimeMoment )){
 							this.upload(file).then(()=>{
 								new Notice('sync Notion success')
 							})
@@ -157,8 +142,6 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 							new Notice('sync Notion success')
 						})
 					}
-
-
 				}
 
 			})
@@ -372,8 +355,8 @@ class SampleSettingTab extends PluginSettingTab {
 					}))
 
 		new Setting(containerEl)
-			.setName("trigger check time")
-			.setDesc("how many minutes trigger check.when set to 60,it will each 1 hours to check files are need update to Notion")
+			.setName("Timing check interval")
+			.setDesc("How often documents under the folder are checked.Recommended value: 30 (minutes)")
 			.addText((cb) => {
 				cb.setValue(String(this.plugin.settings.timer))
 					.onChange(async (value) => {
@@ -386,8 +369,8 @@ class SampleSettingTab extends PluginSettingTab {
 			})
 
 		new Setting(containerEl)
-			.setName("update time later")
-			.setDesc("how many minutes to update later .when at trigger time ,if syncTime is after modify time add later,it file will be update   ")
+			.setName("Synchronous delay time")
+			.setDesc("How long after the change is synchronized again. Recommended value: 30 (minutes)")
 			.addText((cb) => {
 				cb.setValue(String(this.plugin.settings.later))
 					.onChange(async (value) => {
@@ -398,11 +381,6 @@ class SampleSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			})
-
-
-
-
-
 	}
 
 }
