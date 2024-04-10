@@ -7,7 +7,7 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
-	normalizePath, TAbstractFile, EventRef, CachedMetadata, TFile,moment
+	normalizePath, TAbstractFile, EventRef, CachedMetadata, TFile, moment, Vault, TFolder
 } from "obsidian";
 import {addIcons} from 'icon';
 import {Upload2Notion} from "Upload2Notion";
@@ -28,7 +28,9 @@ interface PluginSettings {
 	allowTags: boolean;
 	allowNotionLink: boolean;
 	folderPath: string;
-	timer:string
+	timer:number;
+	later:number;
+
 }
 
 const langConfig = NoticeMConfig(window.localStorage.getItem('language') || 'en')
@@ -42,7 +44,8 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	allowTags: false,
 	allowNotionLink: false,
 	folderPath: "",
-	timer:""
+	timer:60,
+	later:30
 };
 
 interface FileObj {
@@ -95,93 +98,74 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new SampleSettingTab(this.app, this));
-		this.count = 0
-		this.needUpdateFileMap = new Map()
-		this.refArr = []
 		const folder = this.settings.folderPath
 		const notion = new Upload2Notion(this)
-		this.refArr.push( this.app.metadataCache.on('changed',async (file: TFile, data:string,cache: CachedMetadata) => {
-			if (file.parent.path === folder) {
-				let frontmatter = cache.frontmatter
-				console.log(cache)
-				if (frontmatter){
-					let notionID = frontmatter.notionID
-					const yamlObj: any = yamlFrontMatter.loadFront(data);
-
-					if (notionID === undefined || notionID === null){
-						notionID = notion.generateUUID()
-						yamlObj.notionID = notionID
-						await notion.updateYaml(yamlObj, file)
-					}else{
-						if (yamlObj.notionID === notionID){
-
-						}
-					}
-					console.log(notionID)
-					const fileObj: FileObj = {
-						fileName: file.name,
-						file: file,
-						trigger: "modify",
-						notionId: notionID
-					}
-					this.needUpdateFileMap.set(notionID, fileObj)
-				}
-
-
-			}
-		}))
-		this.refArr.push( this.app.metadataCache.on('deleted',(file: TFile,prevCache: CachedMetadata | null)=>{
+		this.app.metadataCache.on('deleted',(file: TFile,prevCache: CachedMetadata | null)=>{
 			if (file.path.indexOf(folder)){
 				const notionID = prevCache.frontmatter.notionID
 				if(notionID){
-					const fileObj :FileObj = {
-						fileName: file.name,
-						file: file,
-						trigger: "delete",
-						notionId:notionID
-					}
-					this.needUpdateFileMap.set(notionID,fileObj)
+					notion.deletePage(notionID).then(r => {
+						new Notice('delete Notion page success')
+					}).catch((error) => {
+					})
 				}
 			}
-		}))
-		for (let refArrKey in this.refArr) {
-			this.registerEvent(refArrKey)
-		}
+		})
 
+		let timerSetting = this.settings.timer
 
-		let timer = Number(this.settings.timer)
-		if (timer === undefined || timer == null) {
-			timer = 60
+		if (timerSetting<1 ||timerSetting > 60*24){
+			timerSetting = 60
 		}
 		this.registerInterval(	window.setInterval(() =>{
-			console.log(this.needUpdateFileMap.size)
-			this.autoUpload()
+			console.log('开始执行',1000*60*timerSetting)
+			this.syncFolder()
 			this.needUpdateFileMap.clear()
-			console.log(this.needUpdateFileMap.size)
-		},1000*timer))
+		},1000*60*timerSetting))
 	}
 
-	autoUpload(){
-		this.needUpdateFileMap.forEach((value, key, map) =>{
-			let trigger = value.trigger
-			let file = value.file
-			if(trigger){
-				if(trigger === 'delete'){
-					const notion =new  Upload2Notion(this);
-					notion.deletePage(key).then(r => {
-						new Notice('delete Notion success')
-					})
+	syncFolder(){
+		const folderPath = this.settings.folderPath
+		const abstractFile = this.app.vault.getAbstractFileByPath(folderPath)
+		if (abstractFile instanceof TFolder) {
+			Vault.recurseChildren(abstractFile, (file) => {
+				// 如果是文件
+				if (file instanceof  TFile){
+					const cache = this.app.metadataCache.getFileCache(file)
+					const yamlFrontMatter = cache.frontmatter
+					const lastSyncTime = yamlFrontMatter.LastSyncTime;
+					if (lastSyncTime){
+						const lastSyncTimeMoment = moment(lastSyncTime,'YYYY-MM-DD HH:mm:ss')
+						const currentDate = moment();
+						// 获取文件的修改日期
+						const mtime = file.stat.mtime
+						const modifiedDate = moment(mtime)
+						let later = this.settings.later
+						// console.log(modifiedDate,lastSyncTimeMoment)
+						if (modifiedDate.subtract(later,"minutes").isAfter(lastSyncTimeMoment ) ||
+							currentDate.subtract(60,"minutes").isAfter(lastSyncTimeMoment )){
+							// console.log('时间到了 \n',modifiedDate,lastSyncTimeMoment)
+							this.upload(file).then(()=>{
+								new Notice('sync Notion success')
+							})
 
-				}else{
+						}else{
+								console.log('时间未到，不进行同步 \n',file.name,modifiedDate,lastSyncTimeMoment)
+						}
+					}else{
 						this.upload(file).then(()=>{
 							new Notice('sync Notion success')
 						})
+					}
+
+
 				}
+
+			})
 		}
-		})
-		this.needUpdateFileMap.clear()
 
 	}
+
 
 	async upload(file: TFile) {
 		const {notionAPI, databaseID, allowTags} = this.settings;
@@ -388,15 +372,33 @@ class SampleSettingTab extends PluginSettingTab {
 					}))
 
 		new Setting(containerEl)
-			.setName("Auto sync Time")
-			.setDesc("how much minutes sync")
+			.setName("trigger check time")
+			.setDesc("how many minutes trigger check.when set to 60,it will each 1 hours to check files are need update to Notion")
 			.addText((cb) => {
-				cb.setValue(this.plugin.settings.timer)
+				cb.setValue(String(this.plugin.settings.timer))
 					.onChange(async (value) => {
-						this.plugin.settings.timer = value;
+						this.plugin.settings.timer = Number(value);
+						if (this.plugin.settings.timer !== undefined) {
+							new Notice('Time must be numbers!')
+						}
 						await this.plugin.saveSettings();
 					})
 			})
+
+		new Setting(containerEl)
+			.setName("update time later")
+			.setDesc("how many minutes to update later .when at trigger time ,if syncTime is after modify time add later,it file will be update   ")
+			.addText((cb) => {
+				cb.setValue(String(this.plugin.settings.later))
+					.onChange(async (value) => {
+						this.plugin.settings.later = Number(value);
+						if (this.plugin.settings.later !== undefined) {
+							new Notice('Time must be numbers!')
+						}
+						await this.plugin.saveSettings();
+					})
+			})
+
 
 
 

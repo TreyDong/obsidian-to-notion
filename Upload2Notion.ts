@@ -1,4 +1,4 @@
-import { Notice, requestUrl,TFile,normalizePath, App } from "obsidian";
+import {Notice, requestUrl, TFile, normalizePath, App, moment} from "obsidian";
 import { Client } from "@notionhq/client";
 import { markdownToBlocks,  } from "@tryfabric/martian";
 import * as yamlFrontMatter from "yaml-front-matter";
@@ -135,6 +135,7 @@ export class Upload2Notion {
 		if (allowNotionLink){
 			yamlObj.NotionLink = url;
 		}
+		yamlObj.LastSyncTime = moment().format('YYYY-MM-DD HH:mm:ss')
 		try {
 			await navigator.clipboard.writeText(url)
 		} catch (error) {
