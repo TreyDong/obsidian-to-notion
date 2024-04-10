@@ -90,9 +90,19 @@ Notion ID是你想分享文件的页面ID。
 
 使用 [Obsidian Image Auto Upload Plugin](https://github.com/renmu123/obsidian-image-auto-upload-plugin) 插件，配置你自己的 cos 或者 oss，将图片存储到你自己的云存储，然后在 obsidian 中使用图片链接即可。该插件会自动帮你上传图片，并替换成链接。
 
-# 请我喝杯咖啡
+## 自动同步到Notion
+支持在某个文件夹下的文件自动同步到Notion
 
-[顿顿饭](https://dun.mianbaoduo.com/@easy)
+首先设置文件夹路径,如果文件夹位于根路径下,则只需使用文件夹名称（不包含/),并且 *不要将/设置为path*,
+然后,您可以设置定时检查间隔（默认值为30),此设置控制检查文件的频率。
+
+例如:如果设置30（分钟）,则每30分钟将递归文件夹,并检查文件夹下的每个文件是否需要更新上传
+
+最后,设置同步延迟时间（默认值为30),在修改文件后，延迟一定的时间,文件将自动上传到Notion
+
+（如果你在Obsidian删除了一个文件,则Notion中页面将被同步删除）
+
+
 
 # 感谢
 [开发流程 | Obsidian 插件开发文档](https://luhaifeng666.github.io/obsidian-plugin-docs-zh/zh/getting-started/development-workflow.html)
