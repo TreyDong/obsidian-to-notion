@@ -148,7 +148,20 @@ The visiter don't need to redirect url.
 
 To sync images to your oss or cos bucket, use the [Obsidian Image Auto Upload Plugin](https://github.com/renmu123/obsidian-image-auto-upload-plugin).
 
+## Auto sync file to Notion
 
+First set a Folder Path, if folder under root path,just use folder name (do not contains /) and also * **_do not set /  as path_** *,
+then you can set Timing check interval(default value is 30), this setting control how often check files. 
+
+for example: if you set 30(minutes),each 30 minutes will recursion folder and check each file is need upload 
+
+finally, set Synchronous delay time(default value is 30), after modified file and delay time ,file will auto upload to Notion
+
+(if page is delete in obsidian, the page in notion will be delete same )
+
+
+
+![image](https://github.com/TreyDong/obsidian-to-notion/assets/16433713/758b1377-14b6-495a-9bdd-45ff4039157a)
 
 # Development
 
