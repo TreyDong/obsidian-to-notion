@@ -83,6 +83,14 @@ export default class ObsidianSyncNotionPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({
+			id: "share-folder",
+			name: "share-folder to notion ",
+			editorCallback: async (editor: Editor, view: MarkdownView) => {
+				this.syncFolder()
+			},
+		});
+
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new SampleSettingTab(this.app, this));
 		const folder = this.settings.folderPath
@@ -361,7 +369,7 @@ class SampleSettingTab extends PluginSettingTab {
 				cb.setValue(String(this.plugin.settings.timer))
 					.onChange(async (value) => {
 						this.plugin.settings.timer = Number(value);
-						if (this.plugin.settings.timer !== undefined) {
+						if (this.plugin.settings.timer === undefined) {
 							new Notice('Time must be numbers!')
 						}
 						await this.plugin.saveSettings();
@@ -375,7 +383,7 @@ class SampleSettingTab extends PluginSettingTab {
 				cb.setValue(String(this.plugin.settings.later))
 					.onChange(async (value) => {
 						this.plugin.settings.later = Number(value);
-						if (this.plugin.settings.later !== undefined) {
+						if (this.plugin.settings.later === undefined) {
 							new Notice('Time must be numbers!')
 						}
 						await this.plugin.saveSettings();
